@@ -3,7 +3,6 @@ from __future__ import unicode_literals
 
 import ast
 
-
 class SmellBase(ast.NodeVisitor):
     '''
         Classe base para navegação no AST
@@ -74,7 +73,7 @@ class MeddlingServiceVisitor(SmellBase):
         
         [x] Mapear imports do módulo 'django.db'
         [x] Procurar uso de alguma classe ou função do módulo 'django.db'
-        [x] Procurar uso de alguma string contendo ["SELECT", "UPDATE", "DELETE", "FROM", "WHERE", "JOIN", "TABLE", "CREATE"]
+        [x] Procurar uso de alguma string contendo ["SELECT", "UPDATE", "DELETE", "INSERT", "CREATE"]
         [ ] Implementar busca em strings com expressão regular
     '''        
     
@@ -99,7 +98,7 @@ class MeddlingServiceVisitor(SmellBase):
                 self.imports[item.asname or item.name] = item.name
             
     def visit_Str(self, node):
-        EXPR_SQL = ["SELECT", "UPDATE", "DELETE", "FROM", "WHERE", "JOIN", "TABLE", "CREATE"]
+        EXPR_SQL = ["SELECT", "UPDATE", "DELETE", "INSERT", "CREATE"]
         for sql in EXPR_SQL:
             try:
                 if sql in node.s:
@@ -115,12 +114,40 @@ class MeddlingServiceVisitor(SmellBase):
    
 class BrainRepositoryVisitor(SmellBase):
     '''
-        [ ] Medir complexidade de McCabe
-        [ ] Medir complexidade do SQL
-            [ ] Quantidade de comandos SQLs (WHERE, AND, OR, JOIN, EXISTS, NOT, FROM, XOR, IF, ELSE, CASE, IN) 
+        [x] Medir complexidade de McCabe
+        [ ] Medir complexidade do SQL (WHERE, AND, OR, JOIN, EXISTS, NOT, FROM, XOR, IF, ELSE, CASE, IN) 
     '''
-    pass
-
+    def __init__(self, module, complexity, max_sql):
+        self.smell = "Brain Repository"
+        self.complexity = complexity
+        self.max_sql = max_sql
+        self.count_sql = 0
+        SmellBase.__init__(self, module)
+    
+    def visit_ClassDef(self, node):
+        if self.complexity.has_key(node.name):
+            SmellBase.visit_ClassDef(self, node)
+        
+    def visit_FunctionDef(self, node):
+        if self.cls and node.name in self.complexity[self.cls]:
+            SmellBase.visit_FunctionDef(self, node)
+    
+    def pre_visit_FuncitonDef(self, node):
+        self.count_sql = 0
+    
+    def pos_visit_FuncitonDef(self, node):
+        if self.count_sql > self.max_sql:
+            self.add_violation(node)
+    
+    
+    def visit_Str(self, node):
+        EXPR_SQL = [' WHERE ', ' AND ', ' OR ', ' JOIN ', ' EXISTS ', ' NOT ', ' FROM ', ' XOR ', ' IF ', ' ELSE ', ' CASE ', ' IN ']
+        try:
+            for sql in EXPR_SQL:
+                self.count_sql += node.s.count(sql)
+        except UnicodeDecodeError:
+            pass
+    
 
 class LaboriousRepositoryMethodVisitor(SmellBase):
     '''

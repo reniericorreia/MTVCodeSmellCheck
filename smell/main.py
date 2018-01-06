@@ -1,23 +1,35 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 
-import subprocess
 import os
 import fnmatch
 import ast
 from smell.visitor import MeddlingServiceVisitor, FatRepositoryVisitor, LaboriousRepositoryMethodVisitor,\
-    ScanModelManagers, ScanModelRelationships
-
+    ScanModelManagers, ScanModelRelationships, BrainRepositoryVisitor
+from smell.complexity import McCabeComplexity
 
 def check_code_smells():
+    check_models()
+    check_views()
+    
+def check_models():
     files = load_files('models')
     nodes = load_nodes(files)
     models = mapping_relationships(nodes)
+    for key in nodes.keys():
+        '''
+            TODO: parametrizar valor da complexidade de McCabe
+            TODO: parametrizar valor da complexidade do SQL
+        '''
+        complexitys = McCabeComplexity(10).calcule(nodes[key])
+        BrainRepositoryVisitor(key, complexitys, 10).visit(nodes[key])
+        FatRepositoryVisitor(key, models).visit(nodes[key])
+        LaboriousRepositoryMethodVisitor(key, models).visit(nodes[key])
     
-    brain_repository(nodes, files)
-    fat_repository(nodes, models)
-    laborious_repository_method(nodes, models)
-    meddling_service()
+def check_views():
+    nodes = load_nodes(load_files('views'))
+    for key in nodes.keys():
+        MeddlingServiceVisitor(key).visit(nodes[key])
     
 def mapping_relationships(nodes):
     managers = mapping_managers(load_nodes(load_files('managers')))
@@ -38,31 +50,7 @@ def mapping_managers(nodes):
         scan.visit(nodes[key])
         managers.extend(scan.managers)
     return managers    
-
-def brain_repository(nodes, files):
-    process_python = subprocess.Popen(['whereis', 'python'], stdout=subprocess.PIPE)
-    python, _ = process_python.communicate()
-    python = python.replace('\n', '')
-    
-    for f in files:
-        print f
-        process_mccabe = subprocess.Popen([python,"-m", "mccabe", "--min", "10", f], stdout=subprocess.PIPE)
-        mccabe, _ = process_mccabe.communicate()
-        print mccabe
         
-def laborious_repository_method(nodes, models):
-    for key in nodes.keys():
-        LaboriousRepositoryMethodVisitor(key, models).visit(nodes[key])
-
-def fat_repository(nodes, models):
-    for key in nodes.keys():
-        FatRepositoryVisitor(key, models).visit(nodes[key])
-
-def meddling_service():
-    nodes = load_nodes(load_files('views'))
-    for key in nodes.keys():
-        MeddlingServiceVisitor(key).visit(nodes[key])
-
 def load_files(layer):
     '''
         TODO: parametrizar em arquivo de configuração nome dos arquivos fora do padrão Django que fazem parte da camada.
