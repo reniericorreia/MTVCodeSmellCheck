@@ -41,7 +41,7 @@ class SmellBase(ast.NodeVisitor):
             self.imports[item.asname or item.name] = item.name
     
     def visit_ClassDef(self, node):
-        if "Meta" == node.name:
+        if "Meta" == node.name and self.cls:
             pass
         else:
             self.cls = node.name
@@ -114,8 +114,10 @@ class MeddlingServiceVisitor(SmellBase):
    
 class BrainRepositoryVisitor(SmellBase):
     '''
+        Lógica complexa no repositório
+        
         [x] Medir complexidade de McCabe
-        [ ] Medir complexidade do SQL (WHERE, AND, OR, JOIN, EXISTS, NOT, FROM, XOR, IF, ELSE, CASE, IN) 
+        [x] Medir complexidade do SQL (WHERE, AND, OR, JOIN, EXISTS, NOT, FROM, XOR, IF, ELSE, CASE, IN) 
     '''
     def __init__(self, module, complexity, max_sql):
         self.smell = "Brain Repository"
@@ -151,11 +153,10 @@ class BrainRepositoryVisitor(SmellBase):
 
 class LaboriousRepositoryMethodVisitor(SmellBase):
     '''
-        Um método de repositório executar mais de uma query string
+        Um método de repositório com várias ações no banco de dados
         
         [x] Identificar chamada ao método django.db.connection.cursor().execute(query)
         [x] Identificar chamada a 'manager.raw()'
-        [x] Identificar chamada aos métodos 'get_dict, get_dict_dict, get_list, get_list_extra' (implementação do SUAP).
         [x] Adicionar violação se houver dois ou mais acessos ao bd no mesmo método.
     '''
     
@@ -231,22 +232,23 @@ class LaboriousRepositoryMethodVisitor(SmellBase):
                     self.cursor = True
                     return False
                 # Checkagem específica para o SUAP.
-                elif 'djtools.db' == package and method in ['get_dict', 'get_dict_dict', 'get_list', 'get_list_extra']:
-                    return True
+                #elif 'djtools.db' == package and method in ['get_dict', 'get_dict_dict', 'get_list', 'get_list_extra']:
+                #    return True
                 
         elif self.cursor and self.cursor == cls and 'execute' == method:
             return True
+        else:
+            return False
 
 
 class FatRepositoryVisitor(SmellBase):
     '''
-        Um model acessar managers de entidades que não são atributos/relacionamentos diretos ou reversos dele.
+        um modelo deve acessar apenas os seus próprios managers ou os managers das entidades que se relacionam diretamente ou inversamente a ele.
         
-        [x] Mapear atributos de relacionamento da classe (models.ForeignKey, models.OneToOneField e models.ManyToManyField)
-        [x] Identificar entidades usadas na classe que não tem relacionamento direto
-        [x] Identificar entidades usadas na classe que não tem relacionamento reverso
-        [x] Identificar managers das entidades não relacionadas (models.Manager) - https://docs.djangoproject.com/en/2.0/topics/db/managers/
-        [ ] Realizar procedimentos nas heranças se houver.
+        [x] Identificar os relacionamentos do modelo (models.ForeignKey, models.OneToOneField e models.ManyToManyField)
+        [x] Identificar modelos usados que não são relacionamento direto ou reverso
+        [x] Identificar managers dos modelos não relacionadas (models.Manager)
+        [ ] Verificar superclass nos casos em que houver herança.
     '''
     
     def __init__(self, module, models):
