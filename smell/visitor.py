@@ -67,7 +67,7 @@ class SmellBase(ast.NodeVisitor):
         pass
     
 
-class MeddlingServiceVisitor(SmellBase):
+class MeddlingViewVisitor(SmellBase):
     '''
         Uma visão conter uma dependência para api de persistência 'django.db' ou construir strings SQLs
         
@@ -78,7 +78,7 @@ class MeddlingServiceVisitor(SmellBase):
     '''        
     
     def __init__(self, module):
-        self.smell = "Meddling Service"
+        self.smell = "Meddling View"
         SmellBase.__init__(self, module)
         
     def visit_ImportFrom(self, node):
@@ -111,6 +111,49 @@ class MeddlingServiceVisitor(SmellBase):
         if self.imports.has_key(node.id):
             self.add_violation(node)
 
+class MeddlingModelVisitor(SmellBase):
+    '''
+        Uma visão conter uma dependência para api de persistência 'django.db' ou construir strings SQLs
+        
+        [x] Mapear imports do módulo 'django.db'
+        [x] Procurar uso de alguma classe ou função do módulo 'django.db'
+        [x] Procurar uso de alguma string contendo ["SELECT", "UPDATE", "DELETE", "INSERT", "CREATE"]
+        [ ] Implementar busca em strings com expressão regular
+    '''        
+    
+    def __init__(self, module):
+        self.smell = "Meddling Model"
+        SmellBase.__init__(self, module)
+        
+    def visit_ImportFrom(self, node):
+        for item in node.names:
+            if node.level == 0:
+                i = '{}.{}'.format(node.module, item.name)
+            else:
+                i = '{}.{}.{}'.format(".".join(self.module.split('.')[:-1]), node.module, item.name)
+            if i.startswith("django.db"):
+                self.add_violation(node)
+                self.imports[item.asname or item.name] = i
+            
+    def visit_Import(self, node):
+        for item in node.names:
+            if item.name.startswith("django.db"):
+                self.add_violation(node)
+                self.imports[item.asname or item.name] = item.name
+            
+    def visit_Str(self, node):
+        EXPR_SQL = ["SELECT", "UPDATE", "DELETE", "INSERT", "CREATE"]
+        for sql in EXPR_SQL:
+            try:
+                if sql in node.s:
+                    self.add_violation(node)
+                    break
+            except UnicodeDecodeError:
+                pass
+            
+    def visit_Name(self, node):
+        if self.imports.has_key(node.id):
+            self.add_violation(node)
    
 class BrainRepositoryVisitor(SmellBase):
     '''
@@ -127,20 +170,21 @@ class BrainRepositoryVisitor(SmellBase):
         SmellBase.__init__(self, module)
     
     def visit_ClassDef(self, node):
+        # verifica a classe se ela contiver algum método complexo (mccabe)
         if self.complexity.has_key(node.name):
             SmellBase.visit_ClassDef(self, node)
         
     def visit_FunctionDef(self, node):
+        # verifica o método se ele for complexo (mccabe)
         if self.cls and node.name in self.complexity[self.cls]:
             SmellBase.visit_FunctionDef(self, node)
     
-    def pre_visit_FuncitonDef(self, node):
+    def pre_visit_FuncitonDef(self, _):
         self.count_sql = 0
     
     def pos_visit_FuncitonDef(self, node):
         if self.count_sql > self.max_sql:
             self.add_violation(node)
-    
     
     def visit_Str(self, node):
         EXPR_SQL = [' WHERE ', ' AND ', ' OR ', ' JOIN ', ' EXISTS ', ' NOT ', ' FROM ', ' XOR ', ' IF ', ' ELSE ', ' CASE ', ' IN ']
@@ -356,16 +400,26 @@ class ScanModelRelationships(SmellBase):
         SmellBase.__init__(self, module, {})
     
     def pre_visit_ClassDef(self, node):
-        module = self.module
-        temp = module.split('.')
-        if '.models.' in module and len(temp) == 3:
-            module = '.'.join([temp[0], temp[1]]) 
-        self.key = '{}.{}'.format(module, node.name)
-        self.models[self.key] = [{'managers':['objects']}]
+        # verifica se classe é do tipo Model
+        is_model = False
+        for heranca in node.bases:
+            if (isinstance(heranca, ast.Name) and 'Model' in heranca.id) or (isinstance(heranca, ast.Attribute) and 'Model' in heranca.attr):
+                is_model = True
+                break
+        if is_model:
+            module = self.module
+            temp = module.split('.')
+            # padroniza o identificador chave de cada modelo
+            if '.models.' in module and len(temp) == 3:
+                module = '.'.join([temp[0], temp[1]]) 
+            self.key = '{}.{}'.format(module, node.name)
+            # adiciona na lista de managers o manager padrão
+            self.models[self.key] = [{'managers':['objects']}]
         
     def visit_Assign(self, node):
         self.is_assign = True
         self.generic_visit(node)
+        # adiciona atributo na lista de managers se ele for do tipo Manager
         if self.obj_manager:
             name_manager = node.targets[0].id
             self.models[self.key][0]['managers'].append(name_manager)
@@ -375,36 +429,40 @@ class ScanModelRelationships(SmellBase):
     def visit_Call(self, node):
         if self.is_attribute_class():
             name = self.visit_Attribute(node.func)
+            # identifica se atributo é do tipo Manager
             if self.imports.has_key(name) and self.imports[name] in self.managers:
                 self.obj_manager = self.imports[name]
-            for value in ['models.ForeignKey', 'models.OneToOneField', 'models.ManyToManyField']:
-                if value in name:
-                    arg = node.args[0]
-                    if isinstance(arg, ast.Name):
-                        if self.imports.has_key(arg.id):
-                            cls = '{}.{}'.format(self.imports[arg.id].split('.')[0], arg.id)
-                            self.models[self.key].append(cls)
-                            break
+            else:
+                # adiciona o tipo do modelo se o atributo for relacionamento com outro modelo
+                for value in ['models.ForeignKey', 'models.OneToOneField', 'models.ManyToManyField']:
+                    if value in name:
+                        arg = node.args[0]
+                        if isinstance(arg, ast.Name):
+                            if self.imports.has_key(arg.id):
+                                cls = '{}.{}'.format(self.imports[arg.id].split('.')[0], arg.id)
+                                self.models[self.key].append(cls)
+                                break
+                            else:
+                                cls = '{}.{}'.format(self.module.split('.')[0], arg.id)
+                                self.models[self.key].append(cls)
+                                break
+                        elif isinstance(arg, ast.Attribute):
+                            pass
                         else:
-                            cls = '{}.{}'.format(self.module.split('.')[0], arg.id)
-                            self.models[self.key].append(cls)
-                            break
-                    elif isinstance(arg, ast.Attribute):
-                        pass
-                    else:
-                        if 'self' == arg.s:
-                            break
-                        elif len(arg.s.split('.')) == 1:
-                            cls = "{}.{}".format(self.module.split('.')[0], arg.s)
-                            self.models[self.key].append(cls)
-                            break
-                        else:
-                            self.models[self.key].append(arg.s)
-                            break
+                            if 'self' == arg.s:
+                                break
+                            elif len(arg.s.split('.')) == 1:
+                                cls = "{}.{}".format(self.module.split('.')[0], arg.s)
+                                self.models[self.key].append(cls)
+                                break
+                            else:
+                                self.models[self.key].append(arg.s)
+                                break
         else:
             self.generic_visit(node)
     
     def visit_Attribute(self, node):
+        # identifica o tipo do atributo
         name = []
         if isinstance(node, ast.Name):
             name.append(node.id)
@@ -419,6 +477,7 @@ class ScanModelRelationships(SmellBase):
         return ".".join(name) or ''
     
     def is_attribute_class(self):
+        # identifica se é um atributo de classe
         return self.is_assign and self.cls and not self.method
 
 
@@ -429,10 +488,13 @@ class ScanModelManagers(ast.NodeVisitor):
         self.module = module
     
     def visit_ClassDef(self, node):
-        split = self.module.split('.')
-        if 'managers' == split[1]:
-            self.managers.append('{}.{}'.format(self.module, node.name))
-        
+        # se classe herdar de Manager então adiciona na lista de managers
+        for heranca in node.bases:
+            if isinstance(heranca, ast.Name) and 'Manager' in heranca.id:
+                self.managers.append('{}.{}'.format(self.module, node.name))
+            elif isinstance(heranca, ast.Attribute) and 'Manager' in heranca.attr:
+                self.managers.append('{}.{}'.format(self.module, node.name))
+
 
 class Violation():
     def __init__(self, module, cls, method, line, smell):
