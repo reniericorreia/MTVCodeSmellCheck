@@ -19,7 +19,7 @@ managers:models
 mccabe_complexity:10
 sql_complexity:15
 ```
-\* more than one place separated by semicolons
+\* more than one value separated by semicolons
 
 ### 2. Run the main.py file
 ```
