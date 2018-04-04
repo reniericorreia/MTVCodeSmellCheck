@@ -3,14 +3,14 @@
 
 ## Getting started with MTV Checker
 
-Inside the MTVchecker folder, follow the steps below.
+Inside the MTVchecker directory, follow the steps below.
 
 ### 1. Edit the config.conf file
 
-* project: put the location of the source code
-* managers: put the location where the Manager classes are defined
-* mccabe_complexity:put mccabe's complexity number
-* sql_complexity:put sql's complexity number
+* project: set the location of the source code
+* managers: set the location where the Manager classes are defined
+* mccabe_complexity: set mccabe's complexity number
+* sql_complexity: set sql's complexity number
 
 For example:
 ```
