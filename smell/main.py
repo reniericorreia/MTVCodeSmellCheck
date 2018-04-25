@@ -21,9 +21,7 @@ def check_model():
     nodes = load_nodes(files)
     models = mapping_relationships(nodes)
     for key in nodes.keys():
-        # calcula a complexidade de cada método
         complexitys = McCabeComplexity(int(config['mccabe_complexity'])).calcule(nodes[key])
-        #
         BrainRepositoryVisitor(key, complexitys, int(config['sql_complexity'])).visit(nodes[key])
         FatRepositoryVisitor(key, models).visit(nodes[key])
         LaboriousRepositoryMethodVisitor(key, models).visit(nodes[key])

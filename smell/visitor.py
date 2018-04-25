@@ -23,6 +23,9 @@ class SmellBase(ast.NodeVisitor):
         self.generic_visit(node)
         for violation in self.violations:
             print violation
+        
+        if len(self.violations) > 0:
+            print '{},{},{}'.format(self.smell, self.module, len(self.violations))
             
     def visit_ImportFrom(self, node):
         for item in node.names:
@@ -111,13 +114,13 @@ class MeddlingViewVisitor(SmellBase):
         if self.imports.has_key(node.id):
             self.add_violation(node)
 
+
 class MeddlingModelVisitor(SmellBase):
     '''
-        Uma visão conter uma dependência para api de persistência 'django.db' ou construir strings SQLs
+        Um modelo construir strings HTML
         
-        [x] Mapear imports do módulo 'django.db'
-        [x] Procurar uso de alguma classe ou função do módulo 'django.db'
-        [x] Procurar uso de alguma string contendo ["SELECT", "UPDATE", "DELETE", "INSERT", "CREATE"]
+        https://www.w3schools.com/tags/ref_byfunc.asp
+        
         [ ] Implementar busca em strings com expressão regular
     '''        
     
@@ -125,35 +128,17 @@ class MeddlingModelVisitor(SmellBase):
         self.smell = "Meddling Model"
         SmellBase.__init__(self, module)
         
-    def visit_ImportFrom(self, node):
-        for item in node.names:
-            if node.level == 0:
-                i = '{}.{}'.format(node.module, item.name)
-            else:
-                i = '{}.{}.{}'.format(".".join(self.module.split('.')[:-1]), node.module, item.name)
-            if i.startswith("django.db"):
-                self.add_violation(node)
-                self.imports[item.asname or item.name] = i
-            
-    def visit_Import(self, node):
-        for item in node.names:
-            if item.name.startswith("django.db"):
-                self.add_violation(node)
-                self.imports[item.asname or item.name] = item.name
             
     def visit_Str(self, node):
-        EXPR_SQL = ["SELECT", "UPDATE", "DELETE", "INSERT", "CREATE"]
-        for sql in EXPR_SQL:
+        tags_html = ["<html", "<head", "<body", "<p", "<span", "<form", "<input", "<link", "<div"]
+        for tag in tags_html:
             try:
-                if sql in node.s:
+                if tag in node.s.lower():
                     self.add_violation(node)
                     break
             except UnicodeDecodeError:
                 pass
             
-    def visit_Name(self, node):
-        if self.imports.has_key(node.id):
-            self.add_violation(node)
    
 class BrainRepositoryVisitor(SmellBase):
     '''
@@ -287,7 +272,7 @@ class LaboriousRepositoryMethodVisitor(SmellBase):
 
 class FatRepositoryVisitor(SmellBase):
     '''
-        um modelo deve acessar apenas os seus próprios managers ou os managers das entidades que se relacionam diretamente ou inversamente a ele.
+        um modelo deve acessar apenas os seus próprios      ou os managers das entidades que se relacionam diretamente ou inversamente a ele.
         
         [x] Identificar os relacionamentos do modelo (models.ForeignKey, models.OneToOneField e models.ManyToManyField)
         [x] Identificar modelos usados que não são relacionamento direto ou reverso
