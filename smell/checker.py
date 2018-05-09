@@ -2,6 +2,46 @@
 from __future__ import unicode_literals
 
 import ast
+from smell.complexity import McCabeComplexity
+
+def checker(models, views, managers, config):
+    for key in views.keys():
+        MeddlingViewVisitor(key).visit(views[key])
+    
+    relationships = mapping_relationships(models, managers)
+    for key in models.keys():
+        MeddlingModelVisitor(key).visit(models[key])
+        FatRepositoryVisitor(key, relationships).visit(models[key])
+        LaboriousRepositoryMethodVisitor(key, relationships).visit(models[key])
+        complexitys = McCabeComplexity(int(config['mccabe_complexity'])).calcule(models[key])
+        BrainRepositoryVisitor(key, complexitys, int(config['sql_complexity'])).visit(models[key])
+        
+def counts(models, views):
+    for key in models.keys():
+        CountSQLVisitor(key).visit(models[key])
+    for key in views.keys():
+        CountSQLVisitor(key).visit(views[key])
+    
+    
+def mapping_relationships(models, managers):
+    # identifica todos os managers do modelo
+    managers = mapping_managers(managers)
+    relationship = {}
+    # identifica os atributos da classe que são relacionamentos com outras classes do modelo ou managers
+    for key in models.keys():
+        scan = ScanModelRelationships(key, managers)
+        scan.visit(models[key])
+        relationship.update(scan.models)
+    return relationship
+
+def mapping_managers(nodes):
+    managers = []
+    # mapeia todos os managers existentes no modelo
+    for key in nodes.keys():
+        scan = ScanModelManagers(key)
+        scan.visit(nodes[key])
+        managers.extend(scan.managers)
+    return managers
 
 class SmellBase(ast.NodeVisitor):
     '''
@@ -22,10 +62,8 @@ class SmellBase(ast.NodeVisitor):
     def visit_Module(self, node):
         self.generic_visit(node)
         for violation in self.violations:
-            print violation
-        
-        if len(self.violations) > 0:
-            print '{},{},{}'.format(self.smell, self.module, len(self.violations))
+            #print violation
+            print '{}.{}.{}.{}.{}'.format(violation.module, violation.cls or '-', violation.method or '-', violation.smell, violation.line)
             
     def visit_ImportFrom(self, node):
         for item in node.names:
@@ -171,6 +209,26 @@ class BrainRepositoryVisitor(SmellBase):
         if self.count_sql > self.max_sql:
             self.add_violation(node)
     
+    def visit_Str(self, node):
+        EXPR_SQL = [' WHERE ', ' AND ', ' OR ', ' JOIN ', ' EXISTS ', ' NOT ', ' FROM ', ' XOR ', ' IF ', ' ELSE ', ' CASE ', ' IN ']
+        try:
+            for sql in EXPR_SQL:
+                self.count_sql += node.s.count(sql)
+        except UnicodeDecodeError:
+            pass
+        
+class CountSQLVisitor(SmellBase):
+    def __init__(self, module):
+        self.count_sql = 0
+        SmellBase.__init__(self, module)
+        
+    def pre_visit_FuncitonDef(self, _):
+        self.count_sql = 0
+    
+    def pos_visit_FuncitonDef(self, node):
+        if self.count_sql > 0:
+            print '{}.{}.{}.{}'.format(self.module, self.cls or '-', node.name, self.count_sql)   
+               
     def visit_Str(self, node):
         EXPR_SQL = [' WHERE ', ' AND ', ' OR ', ' JOIN ', ' EXISTS ', ' NOT ', ' FROM ', ' XOR ', ' IF ', ' ELSE ', ' CASE ', ' IN ']
         try:
