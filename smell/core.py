@@ -2,7 +2,7 @@
 from __future__ import unicode_literals
 
 
-from smell.checker import checker
+from smell.checker import checker, counts
 from smell.identify import LayerFiles
 from smell.converter import SourceToAST
 

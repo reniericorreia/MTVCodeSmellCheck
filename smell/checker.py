@@ -2,7 +2,7 @@
 from __future__ import unicode_literals
 
 import ast
-from smell.complexity import McCabeComplexity
+from smell.complexity import McCabeComplexity, SQLComplexity, HalsteadComplexity
 
 def checker(models, views, managers, config):
     for key in views.keys():
@@ -63,7 +63,7 @@ class SmellBase(ast.NodeVisitor):
         self.generic_visit(node)
         for violation in self.violations:
             #print violation
-            print '{}.{}.{}.{}.{}'.format(violation.module, violation.cls or '-', violation.method or '-', violation.smell, violation.line)
+            print '{}.{}.{}.{}.{}'.format(violation.smell, violation.module, violation.cls or '-', violation.method or '-', violation.line)
             
     def visit_ImportFrom(self, node):
         for item in node.names:
@@ -139,14 +139,8 @@ class MeddlingViewVisitor(SmellBase):
                 self.imports[item.asname or item.name] = item.name
             
     def visit_Str(self, node):
-        EXPR_SQL = ["SELECT", "UPDATE", "DELETE", "INSERT", "CREATE"]
-        for sql in EXPR_SQL:
-            try:
-                if sql in node.s:
-                    self.add_violation(node)
-                    break
-            except UnicodeDecodeError:
-                pass
+        if SQLComplexity().is_sql(node.s):
+            self.add_violation(node)
             
     def visit_Name(self, node):
         if self.imports.has_key(node.id):
@@ -181,15 +175,13 @@ class MeddlingModelVisitor(SmellBase):
 class BrainRepositoryVisitor(SmellBase):
     '''
         Lógica complexa no repositório
-        
-        [x] Medir complexidade de McCabe
-        [x] Medir complexidade do SQL (WHERE, AND, OR, JOIN, EXISTS, NOT, FROM, XOR, IF, ELSE, CASE, IN) 
     '''
     def __init__(self, module, complexity, max_sql):
         self.smell = "Brain Repository"
         self.complexity = complexity
-        self.max_sql = max_sql
-        self.count_sql = 0
+        self.sql_statement = ''
+        self.sql_complexity = SQLComplexity(max_sql)
+        self.is_assign = False
         SmellBase.__init__(self, module)
     
     def visit_ClassDef(self, node):
@@ -203,40 +195,48 @@ class BrainRepositoryVisitor(SmellBase):
             SmellBase.visit_FunctionDef(self, node)
     
     def pre_visit_FuncitonDef(self, _):
-        self.count_sql = 0
+        self.sql_statement = ''
     
     def pos_visit_FuncitonDef(self, node):
-        if self.count_sql > self.max_sql:
+        if self.sql_complexity.is_complexity(self.sql_statement):
             self.add_violation(node)
     
+    def visit_Assign(self, node):
+        self.is_assign = True
+        self.generic_visit(node)
+        self.is_assign = False
+    
     def visit_Str(self, node):
-        EXPR_SQL = [' WHERE ', ' AND ', ' OR ', ' JOIN ', ' EXISTS ', ' NOT ', ' FROM ', ' XOR ', ' IF ', ' ELSE ', ' CASE ', ' IN ']
-        try:
-            for sql in EXPR_SQL:
-                self.count_sql += node.s.count(sql)
-        except UnicodeDecodeError:
-            pass
+        sql = node.s
+        if self.is_assign and self.sql_complexity.is_sql(sql):
+            self.sql_statement = ' '.join([self.sql_statement, sql]) 
+            
         
 class CountSQLVisitor(SmellBase):
     def __init__(self, module):
-        self.count_sql = 0
+        self.sql_statement = ''
+        self.is_assign = False   
         SmellBase.__init__(self, module)
         
     def pre_visit_FuncitonDef(self, _):
-        self.count_sql = 0
+        self.sql_statement = ''
     
     def pos_visit_FuncitonDef(self, node):
-        if self.count_sql > 0:
-            print '{}.{}.{}.{}'.format(self.module, self.cls or '-', node.name, self.count_sql)   
+        if self.sql_statement:
+            hc = HalsteadComplexity(SQLComplexity.OPERATORS, SQLComplexity.IGNORE)
+            n1, n2, N1, N2 = hc.count_n(self.sql_statement)
+            print '{}.{}.{}.{}.{}.{}.{}'.format(self.module, self.cls or '-', node.name, n1, n2, N1, N2)
+            
+    def visit_Assign(self, node):
+        self.is_assign = True
+        self.generic_visit(node)
+        self.is_assign = False   
                
     def visit_Str(self, node):
-        EXPR_SQL = [' WHERE ', ' AND ', ' OR ', ' JOIN ', ' EXISTS ', ' NOT ', ' FROM ', ' XOR ', ' IF ', ' ELSE ', ' CASE ', ' IN ']
-        try:
-            for sql in EXPR_SQL:
-                self.count_sql += node.s.count(sql)
-        except UnicodeDecodeError:
-            pass
-    
+        sql = node.s
+        if self.is_assign and SQLComplexity().is_sql(sql):
+            self.sql_statement = ' '.join([self.sql_statement, sql]) 
+                
 
 class LaboriousRepositoryMethodVisitor(SmellBase):
     '''
