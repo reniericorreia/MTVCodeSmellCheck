@@ -225,7 +225,8 @@ class CountSQLVisitor(SmellBase):
         if self.sql_statement:
             hc = HalsteadComplexity(SQLComplexity.OPERATORS, SQLComplexity.IGNORE)
             n1, n2, N1, N2 = hc.count_n(self.sql_statement)
-            print '{}.{}.{}.{}.{}.{}.{}'.format(self.module, self.cls or '-', node.name, n1, n2, N1, N2)
+            mccabe = McCabeComplexity().count_method(node)
+            print '{}.{}.{}.{}.{}.{}.{}.{}'.format(self.module, self.cls or '-', node.name, n1, n2, N1, N2, mccabe)
             
     def visit_Assign(self, node):
         self.is_assign = True

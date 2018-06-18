@@ -21,8 +21,8 @@ def start():
     views = converter.parse(view_files)
     managers = converter.parse(manager_files)
     
-    checker(models, views, managers, config)
-    #counts(models, views)
+    #checker(models, views, managers, config)
+    counts(models, views)
 
 
 def load_config():

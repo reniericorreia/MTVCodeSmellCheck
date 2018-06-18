@@ -22,6 +22,11 @@ class McCabeComplexity():
                     else:
                         self.result[entity] = [method]
         return self.result
+    
+    def count_method(self, node):
+        visitor = PathGraphingAstVisitor()
+        visitor.preorder(node, visitor)
+        return visitor.graphs.values()[0].complexity()
 
 
 class SQLComplexity():
@@ -36,8 +41,8 @@ class SQLComplexity():
                  '&', '|', '^', 
                  '=', '>', '<', '>=', '<=', '<>', 
                  '+=', '-+', '*=', '/=', '%=', '&=', '^-=', '|*=', 
-                 'all', 'and', 'any', 'between', 'exists', 'in', 'like', 'not', 'or', 'some', 
-                 'join') + FUNCTIONS
+                 'all', 'and', 'any', 'between', 'union', 'exists', 'in', 'like', 'not', 'or', 'some', 
+                 'join') + FUNCTIONS + STATEMENTS
     
     IGNORE = ('as', 'on', 'into', 'by', 'distinct', 'limit', 'top', 'rownum', 'inner', 'left', 'right', 'outer') + STATEMENTS
     DETECT = ('and ', 'or ', 'join ') + STATEMENTS
