@@ -11,8 +11,8 @@ class SourceToAST():
     def parse(self, files):
         nodes = {}
         # converte cada arquivo python em um node do AST
-        for f in files:
-            module = f.replace(self.project, '').strip('.').replace('/', '.')[1:-3]
-            node = ast.parse(open(f.__str__()).read())
+        for fname in files:
+            module = fname.replace(self.project, '').strip('.').replace('/', '.')[1:-3]
+            node = ast.parse(open(fname.__str__()).read())
             nodes[module] = node
         return nodes
