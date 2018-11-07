@@ -2,26 +2,26 @@
 from __future__ import unicode_literals
 
 import ast
-from smell.complexity import McCabeComplexity, SQLComplexity, HalsteadComplexity
+from complexity import McCabeComplexity, HalsteadComplexity
 
 def checker(models, views, managers, config):
+    
+    max_mccabe_complexity = int(config['max_mccabe_complexity'])
+    min_mccabe_complexity = int(config['min_mccabe_complexity'])
+    max_sql_complexity = int(config['max_sql_complexity'])
+    min_sql_complexity = int(config['min_sql_complexity'])
+    relationships = mapping_relationships(models, managers)
+    
     for key in views.keys():
         MeddlingViewVisitor(key).visit(views[key])
+        BrainRepositoryMethodVisitor(key, max_mccabe_complexity, min_mccabe_complexity, max_sql_complexity, min_sql_complexity).visit(views[key])
+        LaboriousRepositoryMethodVisitor(key, relationships).visit(views[key])
     
-    relationships = mapping_relationships(models, managers)
     for key in models.keys():
         MeddlingModelVisitor(key).visit(models[key])
-        FatRepositoryVisitor(key, relationships).visit(models[key])
+        ExcessiveManagerUseVisitor(key, relationships).visit(models[key])
+        BrainRepositoryMethodVisitor(key, max_mccabe_complexity, min_mccabe_complexity, max_sql_complexity, min_sql_complexity).visit(models[key])
         LaboriousRepositoryMethodVisitor(key, relationships).visit(models[key])
-        complexitys = McCabeComplexity(int(config['mccabe_complexity'])).calcule(models[key])
-        BrainRepositoryVisitor(key, complexitys, int(config['sql_complexity'])).visit(models[key])
-        
-def counts(models, views):
-    for key in models.keys():
-        CountSQLVisitor(key).visit(models[key])
-    for key in views.keys():
-        CountSQLVisitor(key).visit(views[key])
-    
     
 def mapping_relationships(models, managers):
     # identifica todos os managers do modelo
@@ -43,7 +43,8 @@ def mapping_managers(nodes):
         managers.extend(scan.managers)
     return managers
 
-class SmellBase(ast.NodeVisitor):
+
+class Checker(ast.NodeVisitor):
     '''
         Classe base para navegação no AST
     '''
@@ -56,14 +57,10 @@ class SmellBase(ast.NodeVisitor):
         self.cls = None
         self.method = None 
         
-    def add_violation(self, node):
-        return self.violations.append(Violation(self.module, self.cls, self.method, node.lineno, self.smell))
-    
     def visit_Module(self, node):
         self.generic_visit(node)
         for violation in self.violations:
-            #print violation
-            print '{}.{}.{}.{}.{}'.format(violation.smell, violation.module, violation.cls or '-', violation.method or '-', violation.line)
+            print violation
             
     def visit_ImportFrom(self, node):
         for item in node.names:
@@ -91,15 +88,15 @@ class SmellBase(ast.NodeVisitor):
             self.generic_visit(node)
             self.cls = None
             
-    def pre_visit_ClassDef(self, node):
-        pass
-    
     def visit_FunctionDef(self, node):
         self.method = node.name
         self.pre_visit_FuncitonDef(node)
         self.generic_visit(node)
         self.pos_visit_FuncitonDef(node)
         self.method = None
+            
+    def pre_visit_ClassDef(self, node):
+        pass
     
     def pre_visit_FuncitonDef(self, node):
         pass
@@ -107,61 +104,68 @@ class SmellBase(ast.NodeVisitor):
     def pos_visit_FuncitonDef(self, node):
         pass
     
+    def add_violation(self, node):
+        return self.violations.append(Violation(self.module, self.cls, self.method, node.lineno, self.smell))
+    
 
-class MeddlingViewVisitor(SmellBase):
-    '''
-        Uma visão conter uma dependência para api de persistência 'django.db' ou construir strings SQLs
-        
-        [x] Mapear imports do módulo 'django.db'
-        [x] Procurar uso de alguma classe ou função do módulo 'django.db'
-        [x] Procurar uso de alguma string contendo ["SELECT", "UPDATE", "DELETE", "INSERT", "CREATE"]
-        [ ] Implementar busca em strings com expressão regular
-    '''        
+class MeddlingViewVisitor(Checker):
     
     def __init__(self, module):
         self.smell = "Meddling View"
-        SmellBase.__init__(self, module)
+        Checker.__init__(self, module)
         
     def visit_ImportFrom(self, node):
+        '''
+            Adiciona na lista de imports as importações do django.db 
+        '''
         for item in node.names:
             if node.level == 0:
                 i = '{}.{}'.format(node.module, item.name)
             else:
                 i = '{}.{}.{}'.format(".".join(self.module.split('.')[:-1]), node.module, item.name)
             if i.startswith("django.db"):
-                self.add_violation(node)
                 self.imports[item.asname or item.name] = i
             
     def visit_Import(self, node):
+        '''
+            Adiciona na lista de imports as importações do django.db 
+        '''
         for item in node.names:
             if item.name.startswith("django.db"):
-                self.add_violation(node)
                 self.imports[item.asname or item.name] = item.name
             
+    def visit_ClassDef(self, node):
+        self.generic_visit(node)
+    
     def visit_Str(self, node):
+        '''
+        Verifica se a string é um SQL
+        '''
         if SQLComplexity().is_sql(node.s):
             self.add_violation(node)
             
     def visit_Name(self, node):
+        '''
+        Verifica se o atributo é um import do django.db 
+        '''
         if self.imports.has_key(node.id):
             self.add_violation(node)
 
 
-class MeddlingModelVisitor(SmellBase):
+class MeddlingModelVisitor(Checker):
     '''
-        Um modelo construir strings HTML
-        
         https://www.w3schools.com/tags/ref_byfunc.asp
-        
-        [ ] Implementar busca em strings com expressão regular
     '''        
     
     def __init__(self, module):
         self.smell = "Meddling Model"
-        SmellBase.__init__(self, module)
+        Checker.__init__(self, module)
         
             
     def visit_Str(self, node):
+        '''
+            Verifica se a string contém alguma tag HTML.
+        '''
         tags_html = ["<html", "<head", "<body", "<p", "<span", "<form", "<input", "<link", "<div"]
         for tag in tags_html:
             try:
@@ -171,190 +175,35 @@ class MeddlingModelVisitor(SmellBase):
             except UnicodeDecodeError:
                 pass
             
-   
-class BrainRepositoryVisitor(SmellBase):
-    '''
-        Lógica complexa no repositório
-    '''
-    def __init__(self, module, complexity, max_sql):
-        self.smell = "Brain Repository"
-        self.complexity = complexity
-        self.sql_statement = ''
-        self.sql_complexity = SQLComplexity(max_sql)
-        self.is_assign = False
-        SmellBase.__init__(self, module)
-    
-    def visit_ClassDef(self, node):
-        # verifica a classe se ela contiver algum método complexo (mccabe)
-        if self.complexity.has_key(node.name):
-            SmellBase.visit_ClassDef(self, node)
-        
-    def visit_FunctionDef(self, node):
-        # verifica o método se ele for complexo (mccabe)
-        if self.cls and node.name in self.complexity[self.cls]:
-            SmellBase.visit_FunctionDef(self, node)
-    
-    def pre_visit_FuncitonDef(self, _):
-        self.sql_statement = ''
-    
-    def pos_visit_FuncitonDef(self, node):
-        if self.sql_complexity.is_complexity(self.sql_statement):
-            self.add_violation(node)
-    
-    def visit_Assign(self, node):
-        self.is_assign = True
-        self.generic_visit(node)
-        self.is_assign = False
-    
-    def visit_Str(self, node):
-        sql = node.s
-        if self.is_assign and self.sql_complexity.is_sql(sql):
-            self.sql_statement = ' '.join([self.sql_statement, sql]) 
-            
-        
-class CountSQLVisitor(SmellBase):
-    def __init__(self, module):
-        self.sql_statement = ''
-        self.is_assign = False   
-        SmellBase.__init__(self, module)
-        
-    def pre_visit_FuncitonDef(self, _):
-        self.sql_statement = ''
-    
-    def pos_visit_FuncitonDef(self, node):
-        if self.sql_statement:
-            hc = HalsteadComplexity(SQLComplexity.OPERATORS, SQLComplexity.IGNORE)
-            n1, n2, N1, N2 = hc.count_n(self.sql_statement)
-            mccabe = McCabeComplexity().count_method(node)
-            print '{}.{}.{}.{}.{}.{}.{}.{}'.format(self.module, self.cls or '-', node.name, n1, n2, N1, N2, mccabe)
-            
-    def visit_Assign(self, node):
-        self.is_assign = True
-        self.generic_visit(node)
-        self.is_assign = False   
-               
-    def visit_Str(self, node):
-        sql = node.s
-        if self.is_assign and SQLComplexity().is_sql(sql):
-            self.sql_statement = ' '.join([self.sql_statement, sql]) 
-                
 
-class LaboriousRepositoryMethodVisitor(SmellBase):
-    '''
-        Um método de repositório com várias ações no banco de dados
-        
-        [x] Identificar chamada ao método django.db.connection.cursor().execute(query)
-        [x] Identificar chamada a 'manager.raw()'
-        [x] Adicionar violação se houver dois ou mais acessos ao bd no mesmo método.
-    '''
+class ExcessiveManagerUseVisitor(Checker):
     
     def __init__(self, module, models):
-        self.smell = "Laborious Repository Method"
-        self.count = 0
-        self.is_assign = False
-        self.querys = []
-        self.cursor = None
-        SmellBase.__init__(self, module, models)
-    
-    def pre_visit_FuncitonDef(self, node):
-        self.count = 0
-        self.querys = []
-        self.cursor = None
-        
-    def pos_visit_FuncitonDef(self, node):
-        if self.count > 1:
-            self.add_violation(node)
-        self.querys = []
-        self.count = 0
-        
-    def visit_Assign(self, node):
-        self.is_assign = True
-        self.generic_visit(node)
-        if self.cursor == True:
-            self.cursor = node.targets[0].id
-        self.is_assign = False
-    
-    def visit_Call(self, node):
-        if self.cls and self.method:
-            name = self.visit_Attribute(node.func)
-            split = name.split('.')
-            if len(split) > 1:
-                cls = split[0]
-                method = split[1]
-                method_2 = len(split) > 2 and split[2] or None
-                if cls and method and (self.is_api_persistence(cls, method) or self.is_manager_raw(cls, method, method_2)):
-                    self.count+=1
-        else:
-            self.generic_visit(node)
-        
-    def visit_Attribute(self, node):
-        name = []
-        if isinstance(node, ast.Name):
-            name.append(node.id)
-        elif isinstance(node, ast.Call):
-            name.append(self.visit_Attribute(node.func))
-        elif isinstance(node.value, ast.Name):
-            name.append(node.value.id)
-            name.append(node.attr)
-        elif isinstance(node.value, ast.Attribute):
-            name.append(self.visit_Attribute(node.value))
-            name.append(node.attr)
-        return ".".join(name) or ''
-    
-    def is_manager_raw(self, cls, method, method_2):
-        if 'raw' == method_2 and self.imports.has_key(cls):
-            split = self.imports[cls].split('.')
-            key = '{}.{}.{}'.format(split[0], split[1], cls) 
-            if self.models.has_key(key):
-                managers = self.models[key][0]['managers']
-                for manager in managers:
-                    if manager == method:
-                        return True
-        return False
-    
-    def is_api_persistence(self, cls, method):
-        if self.is_assign:
-            if self.imports.has_key(cls):
-                package = self.imports[cls]
-                if 'django.db.connection' == package and 'cursor' == method:
-                    self.cursor = True
-                    return False
-                # Checkagem específica para o SUAP.
-                #elif 'djtools.db' == package and method in ['get_dict', 'get_dict_dict', 'get_list', 'get_list_extra']:
-                #    return True
-                
-        elif self.cursor and self.cursor == cls and 'execute' == method:
-            return True
-        else:
-            return False
-
-
-class FatRepositoryVisitor(SmellBase):
-    '''
-        um modelo deve acessar apenas os seus próprios      ou os managers das entidades que se relacionam diretamente ou inversamente a ele.
-        
-        [x] Identificar os relacionamentos do modelo (models.ForeignKey, models.OneToOneField e models.ManyToManyField)
-        [x] Identificar modelos usados que não são relacionamento direto ou reverso
-        [x] Identificar managers dos modelos não relacionadas (models.Manager)
-        [ ] Verificar superclass nos casos em que houver herança.
-    '''
-    
-    def __init__(self, module, models):
-        self.smell = "Fat Repository"
+        self.smell = "Excessive Manager Use"
         self.is_assign = False
         self.relationships = {}
-        SmellBase.__init__(self, module, models)
+        Checker.__init__(self, module, models)
         
     def pre_visit_ClassDef(self, node):
+        '''
+            Adiciona self e o nome da classe na lista de relacionamentos.
+        '''
         self.relationships['self'] = self.imports[node.name]
         self.relationships[node.name] = self.imports[node.name]
         
     def visit_Assign(self, node):
+        '''
+            Guarda informação que o node faz parte de uma atribuição.
+        '''
         self.is_assign = True
         self.generic_visit(node)
         self.is_assign = False
     
     def visit_Call(self, node):
+        '''
+            Adiciona os relacionamentos com outras classes de modelo na lista de relacionamentos da classe.
+            Verifica se a chamada executada é um manager e se esse manager é um dos relacionamentos da classe.
+        '''
         if self.is_attribute_class():
             name = self.visit_Attribute(node.func)
             for value in ['models.ForeignKey', 'models.OneToOneField', 'models.ManyToManyField']:
@@ -391,6 +240,9 @@ class FatRepositoryVisitor(SmellBase):
             self.generic_visit(node)
         
     def visit_Attribute(self, node):
+        '''
+            Identifica o nome do atributo que está execuntando uma chamada.
+        '''
         name = []
         if isinstance(node, ast.Name):
             name.append(node.id)
@@ -405,9 +257,15 @@ class FatRepositoryVisitor(SmellBase):
         return ".".join(name) or ''
     
     def is_attribute_class(self):
+        '''
+            Verifica se é um atributo de classe.
+        '''
         return self.is_assign and self.cls and not self.method
     
     def is_use_manager(self, cls, method):
+        '''
+            Verifica se método executado pelo objeto/atributo é um manager.
+        '''
         if self.imports.has_key(cls):
             split = self.imports[cls].split('.')
             key = '{}.{}.{}'.format(split[0], split[1], cls) 
@@ -419,29 +277,156 @@ class FatRepositoryVisitor(SmellBase):
         return False
     
     def is_relationship(self, cls):
+        '''
+            Verifica se o objeto/atributo faz parte dos relacionamentos da classe verificada.
+        '''
         is_relationship = False
         if self.relationships.has_key(cls):
+            # relacionamento direto
             is_relationship =  True
         elif self.imports.has_key(cls):
             pk = self.imports[cls]
             if self.models.has_key(pk) and '{}.{}'.format(self.module.split('.')[0], self.cls) in self.models[pk]:
+                # relacionamento reverso
                 is_relationship = True
         return is_relationship
     
     def is_model(self, cls):
+        '''
+            Verifica se o objeto/atributo que executa uma chamada é instância de uma classe de modelo. 
+        '''
         if self.imports.has_key(cls):
             packages = self.imports[cls].split(".")
             return "models" in packages and not "django" in packages
-        return False 
-        
+        return False    
+   
+   
+class BrainRepositoryMethodVisitor(Checker):
+  
+    def __init__(self, module, max_code, min_code, max_sql, min_sql):
+        self.smell = "Brain Repository Method"
+        self.max_code = max_code
+        self.min_code = min_code
+        self.min_sql = min_sql
+        self.max_sql = max_sql
+        Checker.__init__(self, module)
+    
+    def visit_FunctionDef(self, node):
+        '''
+            Avalia a complexidade código e do SQL no método. 
+        '''
+        code = McCabeComplexity().calcule(node)
+        if code >= self.min_code:
+            sql = SQLComplexity().calcule(node)
+            if (sql >= self.max_sql and code >= self.min_code) or (sql >= self.min_sql and code >= self.max_code):
+                self.add_violation(node)
 
-class ScanModelRelationships(SmellBase):
+
+class LaboriousRepositoryMethodVisitor(Checker):
+    
+    def __init__(self, module, models):
+        self.smell = "Laborious Repository Method"
+        self.count = 0
+        self.is_assign = False
+        self.querys = []
+        self.cursor = None
+        Checker.__init__(self, module, models)
+    
+    def pre_visit_FuncitonDef(self, _):
+        '''
+            reinicia variáveis antes de analisar nova função.
+        '''
+        self.count = 0
+        self.querys = []
+        self.cursor = None
+        
+    def pos_visit_FuncitonDef(self, node):
+        '''
+            Adiciona mensagem de violação se houver mais de uma chamada a métodos de persistência.
+        '''
+        if self.count > 1:
+            self.add_violation(node)
+        self.count = 0
+        self.querys = []
+        
+    def visit_Assign(self, node):
+        self.is_assign = True
+        self.generic_visit(node)
+        if self.cursor == True:
+            self.cursor = node.targets[0].id
+        self.is_assign = False
+    
+    def visit_Call(self, node):
+        '''
+            Verifica chamadas executadas dentro de métodos.
+            Verifica se chamada é executada pelo método raw (manager) ou  execute (django.db)
+        '''
+        if self.method:
+            name = self.visit_Attribute(node.func)
+            split = name.split('.')
+            if len(split) > 1:
+                cls = split[0]
+                method = split[1]
+                method_2 = len(split) > 2 and split[2] or None
+                if cls and method and (self.is_api_persistence(cls, method) or self.is_manager_raw(cls, method, method_2)):
+                    self.count+=1
+        else:
+            self.generic_visit(node)
+        
+    def visit_Attribute(self, node):
+        '''
+            Identifica nome do objeto que executa chamada.
+        '''
+        name = []
+        if isinstance(node, ast.Name):
+            name.append(node.id)
+        elif isinstance(node, ast.Call):
+            name.append(self.visit_Attribute(node.func))
+        elif isinstance(node.value, ast.Name):
+            name.append(node.value.id)
+            name.append(node.attr)
+        elif isinstance(node.value, ast.Attribute):
+            name.append(self.visit_Attribute(node.value))
+            name.append(node.attr)
+        return ".".join(name) or ''
+    
+    def is_manager_raw(self, cls, method, method_2):
+        '''
+            Verifica se chamada executada é manager.raw()
+        '''
+        if 'raw' == method_2 and self.imports.has_key(cls):
+            split = self.imports[cls].split('.')
+            key = '{}.{}.{}'.format(split[0], split[1], cls) 
+            if self.models.has_key(key):
+                managers = self.models[key][0]['managers']
+                for manager in managers:
+                    if manager == method:
+                        return True
+        return False
+    
+    def is_api_persistence(self, cls, method):
+        '''
+            Verifica se chamada executada é django.db.connection.cursor.execute()
+        '''
+        if self.is_assign:
+            if self.imports.has_key(cls):
+                package = self.imports[cls]
+                if 'django.db.connection' == package and 'cursor' == method:
+                    self.cursor = True
+                    return False
+        elif self.cursor and self.cursor == cls and 'execute' == method:
+            return True
+        else:
+            return False        
+
+
+class ScanModelRelationships(Checker):
         
     def __init__(self, module, managers):
         self.managers = managers
         self.is_assign = False
         self.obj_manager = None
-        SmellBase.__init__(self, module, {})
+        Checker.__init__(self, module, {})
     
     def pre_visit_ClassDef(self, node):
         # verifica se classe é do tipo Model
@@ -540,6 +525,63 @@ class ScanModelManagers(ast.NodeVisitor):
                 self.managers.append('{}.{}'.format(self.module, node.name))
 
 
+class SQLComplexity(ast.NodeVisitor):
+    '''
+        https://www.w3schools.com/sql/default.asp
+    '''
+    STATEMENTS = ('select ', 'insert ', 'update ', 'delete ', 'group ', 'order ', 'where ', 'having ', 'from ')
+    
+    FUNCTIONS = ('min', 'max', 'count', 'avg', 'sum')
+    
+    OPERATORS = ('+', '-', '*', '/', '%',
+                 '&', '|', '^',
+                 '=', '>', '<', '>=', '<=', '<>',
+                 '+=', '-+', '*=', '/=', '%=', '&=', '^-=', '|*=',
+                 'all', 'and', 'any', 'between', 'union', 'exists', 'in', 'like', 'not', 'or', 'some',
+                 'join') + FUNCTIONS + STATEMENTS
+    
+    IGNORE = ('as', 'on', 'into', 'by', 'distinct', 'limit', 'top', 'rownum', 'inner', 'left', 'right', 'outer') + STATEMENTS
+    DETECT = ('and ', 'or ', 'join ') + STATEMENTS
+    
+    '''
+        ignorar coisas depois do filter
+        notas_4 = matriculas_diarios.filter(nota_4__isnull=False).aggregate(media=Avg('nota_4'), minima=Min('nota_4'),maxima=Max('nota_4')
+        atendimentos_do_mes = demandas_atendidas.filter(demanda__nome=demanda.nome)
+        atendimentos_do_mes.aggregate(Sum('quantidade'))['quantidade__sum'] or 0]
+    '''
+    
+    def visit_Assign(self, node):
+        self.is_assign = True
+        self.generic_visit(node)
+        self.is_assign = False
+    
+    def visit_Str(self, node):
+        source = node.s
+        if self.is_assign and self.is_sql(source):
+            self.source = ' '.join([self.source, source])
+            
+    def calcule(self, node):
+        self.is_assign = False
+        self.source = ''
+        self.visit(node)
+        if self.source != '':
+            return self.complexity(self.source)
+        return -1
+    
+    def complexity(self, source):
+        return HalsteadComplexity(self.OPERATORS, self.IGNORE).calcule_difficulty(source)        
+                
+    def is_sql(self, source):
+        try:
+            for statement in self.DETECT:
+                source = source.lstrip('(')
+                if source.lower().lstrip().startswith(statement):
+                    return True
+        except UnicodeDecodeError:
+            pass
+        return False
+
+
 class Violation():
     def __init__(self, module, cls, method, line, smell):
         self.module = module
@@ -549,13 +591,8 @@ class Violation():
         self.smell = smell
         
     def __str__(self):
-        cls = ''
-        if self.cls:
-            cls = '.{}'.format(self.cls)
-        method = ''
-        if self.method:
-            method = '.{}'.format(self.method)
-        return "{}: {}{}{} ({})".format(self.smell, self.module, cls, method, self.line)
+        temp = self.module.split('.')
+        return '{};{};{};{};{};{};'.format(self.smell, temp[0], temp[1], self.cls or '-', self.method or '-', self.line)
     
     def __unicode__(self):
         return self.__str__()

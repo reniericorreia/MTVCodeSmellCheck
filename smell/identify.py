@@ -1,27 +1,29 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 
-import os
-import fnmatch
-
-
 class LayerFiles():
     
-    def __init__(self, config):
+    def __init__(self, config, files):
         self.config = config
+        self.files = files
         
-    def get_models(self):
-        return self.load_files('models')
+    def get_model(self):
+        return self.get_files_by_layer('models')
     
-    def get_views(self):
-        return self.load_files('views')
+    def get_view(self):
+        result = []
+        result.extend(self.get_files_by_layer('views'))
+        result.extend(self.get_files_by_layer('admin'))
+        result.extend(self.get_files_by_layer('forms'))
+        return result
+    
+    def get_managers(self):
+        return self.get_files_by_layer('managers')
         
-    def load_files(self, layer):
-        project = self.config['project']
-        files = []
+    def get_files_by_layer(self, layer):
+        layer_files = []
         layers = [layer]
-        
-        # adiciona diretórios que estão fora do padrão das camadas Django
+        # adiciona outros diretórios da camada fora do padrão
         if self.config.has_key(layer):
             lista = self.config[layer]
             if ';' in lista: 
@@ -30,16 +32,10 @@ class LayerFiles():
             else:
                 layers.append(lista)
             
-        # adiciona os arquivos python da camada
-        if os.path.isdir(project):
-            for root, _, filenames in os.walk(project):
-                for l in layers:
-                    if root.endswith(l):
-                        for filename in fnmatch.filter(filenames, '*.py'):
-                            files.append(os.path.join(root, filename))
-                    else:
-                        for filename in fnmatch.filter(filenames, '{}.py'.format(l)):
-                            files.append(os.path.join(root, filename))
-        else:
-            print("Este diretório não existe: {}".format(project))
-        return files
+        # identifica os arquivos python da camada
+        for filedir in self.files:
+            f = filedir.split('/')
+            for layer in layers:
+                if f[-2] == layer or f[-1] == '{}.py'.format(layer):
+                    layer_files.append(filedir)
+        return layer_files
