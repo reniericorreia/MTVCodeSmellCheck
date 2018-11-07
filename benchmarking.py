@@ -3,7 +3,7 @@ from __future__ import unicode_literals
 import ast
 from converter import SourceToAST
 from complexity import McCabeComplexity
-from smell.checker import SQLComplexity
+from checker import SQLComplexity
 
 '''
 Ao inves de calcular os thresholds de maneira uniforme em todo o código, é identificado as responsabilidades arquiteturais de cada classe/função e 

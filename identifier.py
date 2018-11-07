@@ -1,11 +1,27 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 
-class LayerFiles():
+import os
+import fnmatch
+
+
+def get_files(project, extension='py'):
+        files = []
+        if os.path.isdir(project):
+            for root, _, filenames in os.walk(project):
+                for filename in fnmatch.filter(filenames, '*.{}'.format(extension)):
+                    files.append(os.path.join(root, filename))
+        return files
+
+
+class Identifier():
     
-    def __init__(self, config, files):
+    def __init__(self, config):
         self.config = config
-        self.files = files
+        self.files = get_files(self.config['project'])
+        
+    def all(self):
+        return {'view':self.get_view(), 'model':self.get_model(), 'manager':self.get_managers()} 
         
     def get_model(self):
         return self.get_files_by_layer('models')
