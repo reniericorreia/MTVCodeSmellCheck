@@ -6,23 +6,53 @@ from complexity import McCabeComplexity, HalsteadComplexity
 
 def checker(models, views, managers, config):
     
-    max_mccabe_complexity = int(config['max_mccabe_complexity'])
-    min_mccabe_complexity = int(config['min_mccabe_complexity'])
-    max_sql_complexity = int(config['max_sql_complexity'])
-    min_sql_complexity = int(config['min_sql_complexity'])
+    max_mccabe_complexity = float(config['max_mccabe_complexity'])
+    min_mccabe_complexity = float(config['min_mccabe_complexity'])
+    max_sql_complexity = float(config['max_sql_complexity'])
+    min_sql_complexity = float(config['min_sql_complexity'])
     relationships = mapping_relationships(models, managers)
     
+    violations = []
+    
     for key in views.keys():
-        MeddlingViewVisitor(key).visit(views[key])
-        BrainRepositoryMethodVisitor(key, max_mccabe_complexity, min_mccabe_complexity, max_sql_complexity, min_sql_complexity).visit(views[key])
-        LaboriousRepositoryMethodVisitor(key, relationships).visit(views[key])
+        md = MeddlingViewVisitor(key)
+        md.visit(views[key])
+        violations.extend(md.violations)
+        
+        brm = BrainRepositoryMethodVisitor(key, max_mccabe_complexity, min_mccabe_complexity, max_sql_complexity, min_sql_complexity)
+        brm.visit(views[key])
+        violations.extend(brm.violations)
+        
+        lrm = LaboriousRepositoryMethodVisitor(key, relationships)
+        lrm.visit(views[key])
+        violations.extend(lrm.violations)
     
     for key in models.keys():
-        MeddlingModelVisitor(key).visit(models[key])
-        ExcessiveManagerUseVisitor(key, relationships).visit(models[key])
-        BrainRepositoryMethodVisitor(key, max_mccabe_complexity, min_mccabe_complexity, max_sql_complexity, min_sql_complexity).visit(models[key])
-        LaboriousRepositoryMethodVisitor(key, relationships).visit(models[key])
+        mm = MeddlingModelVisitor(key)
+        mm.visit(models[key])
+        violations.extend(mm.violations)
+        
+        emu = ExcessiveManagerUseVisitor(key, relationships)
+        emu.visit(models[key])
+        violations.extend(emu.violations)
+        
+        brm = BrainRepositoryMethodVisitor(key, max_mccabe_complexity, min_mccabe_complexity, max_sql_complexity, min_sql_complexity)
+        brm.visit(models[key])
+        violations.extend(brm.violations)
+        
+        lrm = LaboriousRepositoryMethodVisitor(key, relationships)
+        lrm.visit(models[key])
+        violations.extend(lrm.violations)
     
+    result = []    
+    if config.has_key('apps'):
+        for violation in violations:
+            if violation.app in config['apps'].split(';'):
+                result.append(violation)
+    else:
+        result = violations
+    return result
+               
 def mapping_relationships(models, managers):
     # identifica todos os managers do modelo
     managers = mapping_managers(managers)
@@ -59,8 +89,8 @@ class Checker(ast.NodeVisitor):
         
     def visit_Module(self, node):
         self.generic_visit(node)
-        for violation in self.violations:
-            print violation
+        #for violation in self.violations:
+        #    print violation
             
     def visit_ImportFrom(self, node):
         for item in node.names:
@@ -166,10 +196,10 @@ class MeddlingModelVisitor(Checker):
         '''
             Verifica se a string contém alguma tag HTML.
         '''
-        tags_html = ["<html", "<head", "<body", "<p", "<span", "<form", "<input", "<link", "<div"]
+        tags_html = ["<html", "<head", "<body", "<p", "<span", "<form", "<input", "<link", "<div", "<h", "<d", "<a", '<br']
         for tag in tags_html:
             try:
-                if tag in node.s.lower():
+                if tag in node.s.lower().lstrip():
                     self.add_violation(node)
                     break
             except UnicodeDecodeError:
@@ -234,7 +264,8 @@ class ExcessiveManagerUseVisitor(Checker):
             if len(split) > 1:
                 cls = split[0]
                 method = split[1]
-                if cls and not self.is_relationship(cls) and self.is_model(cls) and self.is_use_manager(cls, method):
+                if cls and not self.is_relationship(cls) and self.is_model(cls) \
+                    and self.is_use_manager(cls, method):
                     self.add_violation(node)
         else:
             self.generic_visit(node)
@@ -318,7 +349,8 @@ class BrainRepositoryMethodVisitor(Checker):
         code = McCabeComplexity().calcule(node)
         if code >= self.min_code:
             sql = SQLComplexity().calcule(node)
-            if (sql >= self.max_sql and code >= self.min_code) or (sql >= self.min_sql and code >= self.max_code):
+            if (sql >= self.max_sql and code >= self.min_code) or (sql >= self.min_sql and 
+                                                                   code >= self.max_code):
                 self.add_violation(node)
 
 
@@ -368,11 +400,38 @@ class LaboriousRepositoryMethodVisitor(Checker):
                 cls = split[0]
                 method = split[1]
                 method_2 = len(split) > 2 and split[2] or None
-                if cls and method and (self.is_api_persistence(cls, method) or self.is_manager_raw(cls, method, method_2)):
+                if cls and method and (self.is_api_persistence(cls, method) or 
+                                       self.is_manager_raw(cls, method, method_2)):
                     self.count+=1
         else:
             self.generic_visit(node)
-        
+    
+    def is_manager_raw(self, cls, method, method_2):
+        '''
+            Verifica se chamada executada é manager.raw()
+        '''
+        if 'raw' == method_2 and self.imports.has_key(cls):
+            split = self.imports[cls].split('.')
+            key = '{}.{}.{}'.format(split[0], split[1], cls) 
+            if self.models.has_key(key):
+                managers = self.models[key][0]['managers']
+                for manager in managers:
+                    return manager == method
+        return False
+    
+    def is_api_persistence(self, cls, method):
+        '''
+            Verifica se chamada executada é django.db.connection.cursor.execute()
+        '''
+        if self.is_assign:
+            if self.imports.has_key(cls):
+                package = self.imports[cls]
+                if 'django.db.connection' == package and 'cursor' == method:
+                    self.cursor = True
+                    return False
+        elif self.cursor and self.cursor == cls and 'execute' == method: return True
+        else: return False    
+    
     def visit_Attribute(self, node):
         '''
             Identifica nome do objeto que executa chamada.
@@ -388,36 +447,7 @@ class LaboriousRepositoryMethodVisitor(Checker):
         elif isinstance(node.value, ast.Attribute):
             name.append(self.visit_Attribute(node.value))
             name.append(node.attr)
-        return ".".join(name) or ''
-    
-    def is_manager_raw(self, cls, method, method_2):
-        '''
-            Verifica se chamada executada é manager.raw()
-        '''
-        if 'raw' == method_2 and self.imports.has_key(cls):
-            split = self.imports[cls].split('.')
-            key = '{}.{}.{}'.format(split[0], split[1], cls) 
-            if self.models.has_key(key):
-                managers = self.models[key][0]['managers']
-                for manager in managers:
-                    if manager == method:
-                        return True
-        return False
-    
-    def is_api_persistence(self, cls, method):
-        '''
-            Verifica se chamada executada é django.db.connection.cursor.execute()
-        '''
-        if self.is_assign:
-            if self.imports.has_key(cls):
-                package = self.imports[cls]
-                if 'django.db.connection' == package and 'cursor' == method:
-                    self.cursor = True
-                    return False
-        elif self.cursor and self.cursor == cls and 'execute' == method:
-            return True
-        else:
-            return False        
+        return ".".join(name) or ''    
 
 
 class ScanModelRelationships(Checker):
@@ -529,19 +559,20 @@ class SQLComplexity(ast.NodeVisitor):
     '''
         https://www.w3schools.com/sql/default.asp
     '''
-    STATEMENTS = ('select ', 'insert ', 'update ', 'delete ', 'group ', 'order ', 'where ', 'having ', 'from ')
+    STATEMENTS = ('select', 'insert', 'update', 'delete', 'group', 'order', 'where', 'having', 'from', 'create', 'drop','with')
     
-    FUNCTIONS = ('min', 'max', 'count', 'avg', 'sum')
+    FUNCTIONS = ('min', 'max', 'count', 'avg', 'sum', 'coalesce')
     
     OPERATORS = ('+', '-', '*', '/', '%',
                  '&', '|', '^',
                  '=', '>', '<', '>=', '<=', '<>',
                  '+=', '-+', '*=', '/=', '%=', '&=', '^-=', '|*=',
                  'all', 'and', 'any', 'between', 'union', 'exists', 'in', 'like', 'not', 'or', 'some',
-                 'join') + FUNCTIONS + STATEMENTS
+                 'join', 'limit', 'is') + FUNCTIONS + STATEMENTS
     
-    IGNORE = ('as', 'on', 'into', 'by', 'distinct', 'limit', 'top', 'rownum', 'inner', 'left', 'right', 'outer') + STATEMENTS
-    DETECT = ('and ', 'or ', 'join ') + STATEMENTS
+    IGNORE = ('as', 'on', 'into', 'by', 'distinct', 'top', 'rownum', 'inner', 'left', 'right', 'outer', 'desc', 'asc')
+    DETECT = ('and ', 'or ', 'join ', 'select ', 'insert', 'update ', 'delete ', 'group ',
+               'order ', 'where ', 'having ', 'from ', 'create ', 'drop ', 'with ')
     
     '''
         ignorar coisas depois do filter
@@ -584,15 +615,15 @@ class SQLComplexity(ast.NodeVisitor):
 
 class Violation():
     def __init__(self, module, cls, method, line, smell):
-        self.module = module
+        self.app = module.split('.')[0]
+        self.module = module.split('.')[1]
         self.cls = cls
         self.method = method
         self.line = line
         self.smell = smell
         
     def __str__(self):
-        temp = self.module.split('.')
-        return '{};{};{};{};{};{};'.format(self.smell, temp[0], temp[1], self.cls or '-', self.method or '-', self.line)
+        return '{};{};{};{};{};{};'.format(self.smell, self.app, self.module, self.cls or '-', self.method or '-', self.line)
     
     def __unicode__(self):
         return self.__str__()

@@ -43,7 +43,7 @@ def get_LOC(filename):
             if check_next_line:
                 if line.isspace() or line.strip().startswith('#'):
                     pass
-                elif line.strip().startswith('\'\'\'') or line.strip().startswith('\"\"\"'):
+                elif line.strip().startswith('\'\'\' ') or line.strip().startswith('\"\"\" '):
                     check_next_line = False
                 else:
                     loc += 1
@@ -60,9 +60,7 @@ def get_metrics(config, files):
     '''
     files_to_converter = []
     for filename in files:
-        if 'migrations' in filename:
-            pass
-        else:
+        if 'admin' in filename or 'views' in filename or 'forms' in filename or 'models' in filename:
             files_to_converter.append(filename)
     converter = SourceToAST(config)
     nodes = converter.parse(files_to_converter)

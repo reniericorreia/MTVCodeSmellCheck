@@ -7,7 +7,8 @@ class McCabeComplexity():
     
     def calcule(self, node):
         '''
-            Recebe um nó de uma função como entrada e utiliza PathGraphingAstVisitor para calcular a complexidade de mccabe
+            Recebe um nó de uma função como entrada e utiliza PathGraphingAstVisitor para calcular 
+                a complexidade de mccabe
         '''
         mccabe_visitor = PathGraphingAstVisitor()
         mccabe_visitor.preorder(node, mccabe_visitor)
@@ -65,6 +66,6 @@ class HalsteadComplexity():
         (n1/2) x (N2/n2) 
         '''
         n1, n2, _, N2 = self.count_n(source)
-        difficulty = int((float(n1) / 2) * (float(N2) / n2))
+        difficulty = (float(n1) / 2) * (float(N2) / n2)
         return difficulty
     

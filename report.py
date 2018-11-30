@@ -5,8 +5,14 @@ import csv
 import pandas as pd
 
 
+def export_csv(head=[], datalist=[], filename='export_csv.csv', delimitator=';'):
+    c = csv.writer(open(filename, "wb"))
+    c.writerow(head)
+    for data in datalist:
+        c.writerow(data.__str__().split(delimitator))
+
 def exportar_csv(methods, functions):
-    c = csv.writer(open("report_mtv.csv", "wb"))
+    c = csv.writer(open("metrics_report.csv", "wb"))
     c.writerow(["app", "modulo", "classe", "metodo", "mccabe", "sql"])
     for key in methods.keys():
         keys = key.split('.')
@@ -38,27 +44,27 @@ def print_metrics(methods, functions):
         contains_sql = values[1] != '-1'
         list_complexidade_ciclomatica.append(int(values[0]))
         if contains_sql:
-            list_complexidade_sql.append(int(values[1]))
+            list_complexidade_sql.append(round(float(values[1]),2))
         if 'models' in key:
             list_complexidade_ciclomatica_models.append(int(values[0]))
             if contains_sql:
-                list_complexidade_sql_models.append(int(values[1]))
+                list_complexidade_sql_models.append(round(float(values[1]),2))
         elif 'views' in key:
             list_complexidade_ciclomatica_views.append(int(values[0]))
             if contains_sql:
-                list_complexidade_sql_views.append(int(values[1]))
+                list_complexidade_sql_views.append(round(float(values[1]),2))
         elif 'admin' in key:
             list_complexidade_ciclomatica_admin.append(int(values[0]))
             if contains_sql:
-                list_complexidade_sql_admin.append(int(values[1]))
+                list_complexidade_sql_admin.append(round(float(values[1]),2))
         elif 'forms' in key:
             list_complexidade_ciclomatica_forms.append(int(values[0]))
             if contains_sql:
-                list_complexidade_sql_forms.append(int(values[1]))
+                list_complexidade_sql_forms.append(round(float(values[1]),2))
         else:
             list_complexidade_ciclomatica_outros.append(int(values[0]))
             if contains_sql:
-                list_complexidade_sql_outros.append(int(values[1]))
+                list_complexidade_sql_outros.append(float(values[1]))
     
     series_complexidade_ciclomatica = pd.Series(list_complexidade_ciclomatica)
     print '[todos] Total de métodos: ', len(list_complexidade_ciclomatica)
