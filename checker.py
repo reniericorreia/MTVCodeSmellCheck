@@ -53,14 +53,14 @@ def checker(models, views, managers, config):
         result = violations
     return result
                
-def mapping_relationships(models, managers):
+def mapping_relationships(models_node, managers_node):
     # identifica todos os managers do modelo
-    managers = mapping_managers(managers)
+    managers = mapping_managers(managers_node)
     relationship = {}
     # identifica os atributos da classe que são relacionamentos com outras classes do modelo ou managers
-    for key in models.keys():
-        scan = ScanModelRelationships(key, managers)
-        scan.visit(models[key])
+    for key in models_node.keys():
+        scan = ScanModelRelationships(key, managers, models_node)
+        scan.visit(models_node[key])
         relationship.update(scan.models)
     return relationship
 
@@ -218,8 +218,14 @@ class ExcessiveManagerUseVisitor(Checker):
         '''
             Adiciona self e o nome da classe na lista de relacionamentos.
         '''
+        self.relationships = {}
         self.relationships['self'] = self.imports[node.name]
         self.relationships[node.name] = self.imports[node.name]
+        
+    def visit_ClassDef(self, node):
+        classe = '.'.join(self.module.split('.')[0:2] + [node.name])
+        if self.models.has_key(classe):
+            Checker.visit_ClassDef(self, node)
         
     def visit_Assign(self, node):
         '''
@@ -234,11 +240,9 @@ class ExcessiveManagerUseVisitor(Checker):
             Adiciona os relacionamentos com outras classes de modelo na lista de relacionamentos da classe.
             Verifica se a chamada executada é um manager e se esse manager é um dos relacionamentos da classe.
         '''
-        if self.method == 'get_qs_alunos_ingressantes_turmas_concluintes':
-            print 1
         if self.is_attribute_class():
             name = self.calcule_Attribute(node.func)
-            for value in ['models.ForeignKey', 'models.OneToOneField', 'models.ManyToManyField']:
+            for value in ['models.ForeignKey', 'models.OneToOneField', 'models.ManyToManyField', 'GenericRelation']:
                 if value in name:
                     arg = node.args[0]
                     if isinstance(arg, ast.Name):
@@ -457,19 +461,35 @@ class LaboriousRepositoryMethodVisitor(Checker):
 
 class ScanModelRelationships(Checker):
         
-    def __init__(self, module, managers):
+    def __init__(self, module, managers, models_node):
         self.managers = managers
         self.is_assign = False
         self.obj_manager = None
+        self.models_node = models_node
         Checker.__init__(self, module, {})
-    
+        
     def pre_visit_ClassDef(self, node):
         # verifica se classe é do tipo Model
         is_model = False
         for heranca in node.bases:
-            if (isinstance(heranca, ast.Name) and 'Model' in heranca.id) or (isinstance(heranca, ast.Attribute) and 'Model' in heranca.attr):
+            classe_heranca = None
+            if isinstance(heranca, ast.Name):
+                classe_heranca = heranca.id
+            elif isinstance(heranca, ast.Attribute):
+                classe_heranca = heranca.attr
+            if classe_heranca and 'Model' in classe_heranca:
                 is_model = True
                 break
+            else:
+                if self.imports.has_key(classe_heranca):
+                    key_module = '.'.join(self.imports[classe_heranca].split('.')[:-1])
+                    if self.models_node.has_key(key_module):
+                        scan = ScanModelBases(classe_heranca, self.models_node[key_module])
+                        scan.visit(self.models_node[key_module])
+                        is_model = scan.is_model
+                        if is_model:
+                            break
+                                     
         if is_model:
             module = self.module
             temp = module.split('.')
@@ -544,6 +564,30 @@ class ScanModelRelationships(Checker):
         # identifica se é um atributo de classe
         return self.is_assign and self.cls and not self.method
 
+
+class ScanModelBases(ast.NodeVisitor):
+    
+    def __init__(self, classe_base, node_original):
+        self.classe_base = classe_base
+        self.node_original = node_original
+        self.is_model = False
+    
+    def visit_ClassDef(self, node):
+        if self.classe_base == node.name:
+            for base in node.bases:
+                classe = None
+                if isinstance(base, ast.Name):
+                    classe = base.id
+                elif isinstance(base, ast.Attribute):
+                    classe = base.attr
+                if 'Model' in classe:
+                    self.is_model = True
+                    break
+                else:
+                    scan = ScanModelBases(classe, self.node_original)
+                    scan.visit(self.node_original)
+                    self.is_model = scan.is_model
+    
 
 class ScanModelManagers(ast.NodeVisitor):
     
