@@ -228,14 +228,16 @@ class ExcessiveManagerUseVisitor(Checker):
         self.is_assign = True
         self.generic_visit(node)
         self.is_assign = False
-    
+        
     def visit_Call(self, node):
         '''
             Adiciona os relacionamentos com outras classes de modelo na lista de relacionamentos da classe.
             Verifica se a chamada executada é um manager e se esse manager é um dos relacionamentos da classe.
         '''
+        if self.method == 'get_qs_alunos_ingressantes_turmas_concluintes':
+            print 1
         if self.is_attribute_class():
-            name = self.visit_Attribute(node.func)
+            name = self.calcule_Attribute(node.func)
             for value in ['models.ForeignKey', 'models.OneToOneField', 'models.ManyToManyField']:
                 if value in name:
                     arg = node.args[0]
@@ -259,7 +261,7 @@ class ExcessiveManagerUseVisitor(Checker):
                             self.relationships[arg.s.split('.')[1]] = arg.s
                             break
         elif self.cls and self.method:
-            name = self.visit_Attribute(node.func)
+            name = self.calcule_Attribute(node.func)
             split = name.split('.')
             if len(split) > 1:
                 cls = split[0]
@@ -270,7 +272,7 @@ class ExcessiveManagerUseVisitor(Checker):
         else:
             self.generic_visit(node)
         
-    def visit_Attribute(self, node):
+    def calcule_Attribute(self, node):
         '''
             Identifica o nome do atributo que está execuntando uma chamada.
         '''
@@ -278,12 +280,15 @@ class ExcessiveManagerUseVisitor(Checker):
         if isinstance(node, ast.Name):
             name.append(node.id)
         elif isinstance(node, ast.Call):
-            name.append(self.visit_Attribute(node.func))
+            name.append(self.calcule_Attribute(node.func))
+        elif isinstance(node.value, ast.Call):
+            name.append(self.calcule_Attribute(node.value.func))
+            name.append(node.attr)
         elif isinstance(node.value, ast.Name):
             name.append(node.value.id)
             name.append(node.attr)
         elif isinstance(node.value, ast.Attribute):
-            name.append(self.visit_Attribute(node.value))
+            name.append(self.calcule_Attribute(node.value))
             name.append(node.attr)
         return ".".join(name) or ''
     
