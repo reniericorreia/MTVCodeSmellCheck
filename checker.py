@@ -32,7 +32,7 @@ def checker(models, views, managers, config):
         mm.visit(models[key])
         violations.extend(mm.violations)
         
-        emu = ExcessiveManagerUseVisitor(key, relationships)
+        emu = ImproperUseOfManagerVisitor(key, relationships)
         emu.visit(models[key])
         violations.extend(emu.violations)
         
@@ -206,10 +206,10 @@ class MeddlingModelVisitor(Checker):
                 pass
             
 
-class ExcessiveManagerUseVisitor(Checker):
+class ImproperUseOfManagerVisitor(Checker):
     
     def __init__(self, module, models):
-        self.smell = "Excessive Manager Use"
+        self.smell = "Improper Use of Manager"
         self.is_assign = False
         self.relationships = {}
         Checker.__init__(self, module, models)
