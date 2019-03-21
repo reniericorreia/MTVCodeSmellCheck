@@ -3,7 +3,25 @@
 
 ## Getting started with MTV Checker
 
-Inside the MTVchecker directory, follow the steps below.
+> IMPORTANT: This project was developed using python 2
+
+>You can obtain the version from: [download](https://www.python.org/downloads/)
+
+Also to run properly this project you need to have installed in your machine the following libraries from python: 
+
+* Pandas
+* Mccabe
+
+Using `pip` command ( suggested ) you can install both by:
+
+    pip install pandas
+    pip install mccabe
+
+For more details visit their documentation at [Pandas](https://pypi.org/project/pandas/) and [Mccabe](https://pypi.org/project/mccabe/)
+
+##
+
+### Inside the MTVchecker directory, follow the steps below:
 
 ### 1. Edit the config.conf file
 
@@ -13,16 +31,16 @@ Inside the MTVchecker directory, follow the steps below.
 * sql_complexity: set sql's complexity number
 
 For example:
-```
-project:/Users/reniericorreia/workspace/my_app
-managers:models
-mccabe_complexity:10
-sql_complexity:15
-```
+
+    project:/Users/reniericorreia/workspace/my_app
+    managers:models
+    mccabe_complexity:10
+    sql_complexity:15
+
 \* more than one value separated by semicolons
 
-### 2. Run the main.py file
-```
-python main.py
-```
+### 2. Run the manage.py file
+
+    python manage.py
+
 Architectural code smells will be printed on the console
