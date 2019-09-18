@@ -43,4 +43,3 @@ For example:
 
     python manage.py
 
-Architectural code smells will be printed on the console
