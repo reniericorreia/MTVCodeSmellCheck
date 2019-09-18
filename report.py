@@ -10,6 +10,7 @@ def export_csv(head=[], datalist=[], filename='export_csv.csv', delimitator=';')
     c.writerow(head)
     for data in datalist:
         c.writerow(data.__str__().split(delimitator))
+    print('   - {}'.format(filename))
 
 def exportar_csv(methods, functions):
     c = csv.writer(open("metrics_report.csv", "wb"))

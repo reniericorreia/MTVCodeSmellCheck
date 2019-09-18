@@ -20,16 +20,29 @@ def get_config():
 
 
 def start_analysis(config):
+    print(' - Identificando camadas')
     layers = Identifier(config).all()
-    
+    print(' - Convertendo arquivos para AST')
     converter = SourceToAST(config)
     models = converter.parse(layers['model'])
     views = converter.parse(layers['view'])
     managers = converter.parse(layers['manager'])
     
+    print(' - Analisando código fonte')
     violations = checker(models, views, managers, config)
-    export_csv(['design problem', 'app', 'module', 'class', 'function', 'line'], violations, 'problems_report.csv')
-    print '### Relatório salvo em problems_report.csv ###'
+    print(' - Gerando relatórios')
+    export_csv(['design problem', 'app', 'module', 'class', 'function', 'line'], violations, 'design_problems_details.csv')
+    d = {}
+    for v in violations:
+        key = '{};{};{};{}'.format(v.app, v.module, v.cls or '_', v.method or '_')
+        if not d.has_key(key):
+            d[key] = {'Meddling View':'', 'Meddling Model':'', 'Improper Use of Manager':'', 'Brain Persistence Method':'', 'Laborious Persistence Method':''}
+        d[key][v.smell] = 'yes' 
+    result = []
+    for k, value in d.items():
+        s = '{};{};{};{};{};{}'.format(k, value['Meddling View'],value['Meddling Model'],value['Improper Use of Manager'],value['Brain Persistence Method'],value['Laborious Persistence Method'])
+        result.append(s)
+    export_csv(['app', 'module', 'class', 'function', 'Meddling View', 'Meddling Model', 'Improper Use of Manager', 'Brain Persistence Method', 'Laborious Persistence Method'], result, 'design_problems.csv')
 
 
 if __name__ == '__main__':
