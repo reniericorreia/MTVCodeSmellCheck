@@ -47,11 +47,19 @@ if __name__ == '__main__':
             if 'loc' in sys.argv:
                 files = get_files(config['project'])
                 total = 0
+                models = 0
+                views = 0
                 for filename in files:
                     if ('views' in filename or 'models' in filename or 'admin' in filename or 'forms' in filename):
                         loc = get_LOC(filename)
                         total += loc
+                        if 'models' in filename:
+                            models += loc
+                        else:
+                            views += loc
                         print '{};{}'.format(filename, loc)
+                print 'Model: {}'.format(models)
+                print 'View: {}'.format(views)
                 print 'Total: {}'.format(total)
             if 'checker' in sys.argv:
                 start_analysis(config)

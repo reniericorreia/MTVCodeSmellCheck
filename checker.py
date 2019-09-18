@@ -19,13 +19,13 @@ def checker(models, views, managers, config):
         md.visit(views[key])
         violations.extend(md.violations)
         
-        brm = BrainRepositoryMethodVisitor(key, max_mccabe_complexity, min_mccabe_complexity, max_sql_complexity, min_sql_complexity)
-        brm.visit(views[key])
-        violations.extend(brm.violations)
+        bpm = BrainPersistenceMethodVisitor(key, max_mccabe_complexity, min_mccabe_complexity, max_sql_complexity, min_sql_complexity)
+        bpm.visit(views[key])
+        violations.extend(bpm.violations)
         
-        lrm = LaboriousRepositoryMethodVisitor(key, relationships)
-        lrm.visit(views[key])
-        violations.extend(lrm.violations)
+        lpm = LaboriousPersistenceMethodVisitor(key, relationships)
+        lpm.visit(views[key])
+        violations.extend(lpm.violations)
     
     for key in models.keys():
         mm = MeddlingModelVisitor(key)
@@ -36,13 +36,13 @@ def checker(models, views, managers, config):
         emu.visit(models[key])
         violations.extend(emu.violations)
         
-        brm = BrainRepositoryMethodVisitor(key, max_mccabe_complexity, min_mccabe_complexity, max_sql_complexity, min_sql_complexity)
-        brm.visit(models[key])
-        violations.extend(brm.violations)
+        bpm = BrainPersistenceMethodVisitor(key, max_mccabe_complexity, min_mccabe_complexity, max_sql_complexity, min_sql_complexity)
+        bpm.visit(models[key])
+        violations.extend(bpm.violations)
         
-        lrm = LaboriousRepositoryMethodVisitor(key, relationships)
-        lrm.visit(models[key])
-        violations.extend(lrm.violations)
+        lpm = LaboriousPersistenceMethodVisitor(key, relationships)
+        lpm.visit(models[key])
+        violations.extend(lpm.violations)
     
     result = []    
     if config.has_key('apps'):
@@ -119,11 +119,18 @@ class Checker(ast.NodeVisitor):
             self.cls = None
             
     def visit_FunctionDef(self, node):
-        self.method = node.name
+        if self.method is None:
+            self.method = node.name
+        else:
+            self.method = '{}>{}'.format(self.method, node.name)
         self.pre_visit_FuncitonDef(node)
         self.generic_visit(node)
         self.pos_visit_FuncitonDef(node)
-        self.method = None
+        if '>' in self.method:
+            index = self.method.rindex('>')
+            self.method = self.method[:index]
+        else:
+            self.method = None
             
     def pre_visit_ClassDef(self, node):
         pass
@@ -165,7 +172,11 @@ class MeddlingViewVisitor(Checker):
                 self.imports[item.asname or item.name] = item.name
             
     def visit_ClassDef(self, node):
+        if self.cls is None:
+            self.cls = node.name
         self.generic_visit(node)
+        if not "Meta" == node.name:
+            self.cls = None
     
     def visit_Str(self, node):
         '''
@@ -341,10 +352,10 @@ class ImproperUseOfManagerVisitor(Checker):
         return False    
    
    
-class BrainRepositoryMethodVisitor(Checker):
+class BrainPersistenceMethodVisitor(Checker):
   
     def __init__(self, module, max_code, min_code, max_sql, min_sql):
-        self.smell = "Brain Repository Method"
+        self.smell = "Brain Persistence Method"
         self.max_code = max_code
         self.min_code = min_code
         self.min_sql = min_sql
@@ -355,18 +366,20 @@ class BrainRepositoryMethodVisitor(Checker):
         '''
             Avalia a complexidade código e do SQL no método. 
         '''
+        self.method = node.name
         code = McCabeComplexity().calcule(node)
         if code >= self.min_code:
             sql = SQLComplexity().calcule(node)
             if (sql >= self.max_sql and code >= self.min_code) or (sql >= self.min_sql and 
                                                                    code >= self.max_code):
                 self.add_violation(node)
+        self.method = None
 
 
-class LaboriousRepositoryMethodVisitor(Checker):
+class LaboriousPersistenceMethodVisitor(Checker):
     
     def __init__(self, module, models):
-        self.smell = "Laborious Repository Method"
+        self.smell = "Laborious Persistence Method"
         self.count = 0
         self.is_assign = False
         self.querys = []
@@ -501,17 +514,18 @@ class ScanModelRelationships(Checker):
             self.models[self.key] = [{'managers':['objects']}]
         
     def visit_Assign(self, node):
-        self.is_assign = True
-        self.generic_visit(node)
-        # adiciona atributo na lista de managers se ele for do tipo Manager
-        if self.obj_manager:
-            name_manager = node.targets[0].id
-            self.models[self.key][0]['managers'].append(name_manager)
-        self.obj_manager = None
-        self.is_assign = False
+        if hasattr(self, "key"):
+            self.is_assign = True
+            self.generic_visit(node)
+            # adiciona atributo na lista de managers se ele for do tipo Manager
+            if self.obj_manager:
+                name_manager = node.targets[0].id
+                self.models[self.key][0]['managers'].append(name_manager)
+            self.obj_manager = None
+            self.is_assign = False
         
     def visit_Call(self, node):
-        if self.is_attribute_class():
+        if hasattr(self, "key") and self.is_attribute_class():
             name = self.visit_Attribute(node.func)
             # identifica se atributo é do tipo Manager
             if self.imports.has_key(name) and self.imports[name] in self.managers:
