@@ -3,7 +3,7 @@
 
 ## Getting started with MTV Checker
 
-> IMPORTANT: This project was developed using python 2
+> IMPORTANT: This project was developed using python 3
 
 >You can obtain the version from: [download](https://www.python.org/downloads/)
 
